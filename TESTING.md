@@ -57,6 +57,10 @@ flowchart TD
         L6[Live Timeout Context Cancellation -> Exit 3]
         L7[Live Malformed Credential File -> Exit 2]
         L8[Live CLI Binary Subprocess Execution]
+        L9[Live SecretProtector Encrypted File Test]
+        L10[Live SecretProtector Key-Env CLI Binary Test]
+        L11[Live SecretProtector Key-File Security Test]
+        L12[Live SecretProtector Platform-Idiomatic Test]
     end
 
     Root --> Offline
@@ -69,7 +73,7 @@ flowchart TD
 
 ### Requirements
 * **Go Version**: Supported standard Go release toolchain
-* **Standard Dependencies**: `testing`, `context`, `bytes`, `errors`, `net`, `os/exec`
+* **Standard Dependencies**: `testing`, `context`, `bytes`, `errors`, `net`, `os/exec`, `criticalsys/secretprotector`
 
 ### Environment Setup for Live Integration Tests
 When executing live integration tests against Google Cloud Storage:
@@ -85,12 +89,17 @@ When executing live integration tests against Google Cloud Storage:
 | Logical Group | Test Name | Technical Purpose / Description | Success Criteria (PASS/FAIL) |
 |---|---|---|---|
 | **Config & Validation** | `TestConfigValidation` | Validates required fields (`BucketName`, `ProjectID`, credentials / ADC). | **PASS** if invalid configs return `ErrInvalidConfig` and valid configs pass validation. |
-| **Config & Validation** | `TestConfigClean` | Verifies default fallback values for `MaxObjects`, `Timeout`, and path cleaning via `filepath.Clean`. | **PASS** if default max=10, timeout=30s, and relative paths are normalized. |
+| **Config & Validation** | `TestConfigClean` | Verifies default fallback values for `MaxObjects`, `Timeout`, and path cleaning via `filepath.Clean` for `CredFile` and `MasterKeyFile`. | **PASS** if default max=10, timeout=30s, and relative paths are normalized. |
 | **Error Classification** | `TestClassifyError` | Tests mapping of Go errors, `googleapi.Error` status codes, and network errors to granular exit codes (0–5). | **PASS** if 401/OS permissions map to 2, 403/404 map to 4, 503/timeouts map to 3, and config maps to 1. |
 | **Result Formatting** | `TestResultToJSON` | Verifies JSON serialization of connection test result structures. | **PASS** if result serializes to valid JSON string containing `bucket_name` and object list. |
 | **Client Initialization** | `TestNewClientMissingFile` | Tests error handling when `CredFile` path does not exist on disk. | **PASS** if returns `os.ErrNotExist` wrapped error. |
 | **Client Initialization** | `TestNewClientInvalidJSON` | Tests error handling when `CredFile` contains malformed JSON content. | **PASS** if returns authentication error. |
 | **Client Initialization** | `TestNewClientNoCredentials` | Tests error handling when credentials are missing and `AllowADC` is false. | **PASS** if returns `ErrInvalidConfig` error. |
+| **SecretProtector Unit** | `TestNewClient_SecretProtector_EncryptedCredJSON_DirectKey` | Tests `NewClient` in-memory decryption of `CredJSON` using direct `MasterKey`. | **PASS** if resolves master key, decrypts JSON payload, and zeroes memory buffer. |
+| **SecretProtector Unit** | `TestNewClient_SecretProtector_EncryptedCredFile_KeyEnv` | Tests `NewClient` in-memory decryption of `CredFile` using environment variable `MasterKeyEnv`. | **PASS** if reads file, resolves key from env, decrypts JSON, and zeroes memory buffer. |
+| **SecretProtector Unit** | `TestNewClient_SecretProtector_EncryptedCredFile_KeyFile` | Tests `NewClient` in-memory decryption of `CredFile` using key file `MasterKeyFile`. | **PASS** if resolves master key file, verifies OS security boundaries, and decrypts JSON. |
+| **SecretProtector Unit** | `TestNewClient_SecretProtector_InvalidMasterKey` | Tests error handling when master key is invalid or resolution fails. | **PASS** if returns wrapped `ErrAuthFailed`. |
+| **SecretProtector Unit** | `TestNewClient_SecretProtector_DecryptionFailure` | Tests error handling when Base64/GCM decryption fails. | **PASS** if returns wrapped `ErrAuthFailed`. |
 | **Client Abstraction** | `TestNewStorageClient` | Tests creation of `StorageClient` interface wrapper. | **PASS** if wrapper instance is non-nil. |
 | **Client Abstraction** | `TestDefaultStorageClient_Methods` | Tests execution of underlying concrete `storage.Client` method wrappers. | **PASS** if wrapper methods execute without panic. |
 | **Core Testing Engine** | `TestTestConnection_ValidationFail` | Verifies `TestConnection` fails fast on invalid configuration. | **PASS** if validation error returned immediately. |
@@ -110,6 +119,7 @@ When executing live integration tests against Google Cloud Storage:
 | **CLI Application** | `TestRunApp_ErrorClassification` | Tests CLI exit code resolution on test failure. | **PASS** if returns matching classified exit code (e.g., Exit 2 on auth failure). |
 | **CLI Application** | `TestRunApp_ContextTimeoutError` | Tests CLI handling of context timeout errors. | **PASS** if returns `ExitNetworkError` (3). |
 | **CLI Application** | `TestRunApp_NilTestFnFallback` | Tests CLI default fallback handler when testFn is nil. | **PASS** if executes default connection logic. |
+| **CLI Application** | `TestRunApp_SecretProtectorFlags` | Verifies CLI flag parsing for `-key`, `-key-env`, and `-key-file`. | **PASS** if flags map correctly into `Config`. |
 | **Live Integration** | `TestIntegration_LiveConnection_ServiceAccountFile` | End-to-end live test reading SA key file, connecting to live GCS bucket, fetching attributes, and listing objects. | **PASS** if connects to live bucket, returns non-nil `BucketAttrs`, and lists objects. |
 | **Live Integration** | `TestIntegration_LiveConnection_ServiceAccountJSONBytes` | End-to-end live test using raw SA JSON bytes against live GCS bucket. | **PASS** if connects to live bucket, returns non-nil `BucketAttrs`, and returns result. |
 | **Live Integration** | `TestIntegration_LiveConnection_ApplicationDefaultCredentials` | End-to-end live test using ambient ADC authentication against live GCS bucket. | **PASS** if connects via ADC or skips cleanly if local ADC unconfigured. |
@@ -118,6 +128,10 @@ When executing live integration tests against Google Cloud Storage:
 | **Live Integration** | `TestIntegration_LiveConnection_TimeoutCancellation` | End-to-end live test forcing instant deadline expiration (1ns) against live endpoint. | **PASS** if live request is canceled returning `ExitNetworkError` (3). |
 | **Live Integration** | `TestIntegration_LiveConnection_MalformedCredFile` | End-to-end live test using malformed SA key JSON against live endpoint. | **PASS** if live auth fails returning `ExitAuthError` (2). |
 | **Live Integration** | `TestIntegration_LiveCLI_ExecuteBinary` | Compiles CLI executable and runs binary against live GCS endpoint with `-json` flag in subprocess. | **PASS** if binary exits 0 and prints valid JSON matching live bucket name. |
+| **Live Integration** | `TestIntegration_LiveConnection_SecretProtector_EncryptedFile` | Live test encrypting SA credentials with SecretProtector and verifying live GCS bucket access. | **PASS** if decrypts in-memory and lists live GCS objects. |
+| **Live Integration** | `TestIntegration_LiveCLI_SecretProtector_EncryptedFile_KeyEnv` | Compiles CLI and runs binary with SecretProtector encrypted credentials and `-key-env`. | **PASS** if binary decrypts key from env and outputs live JSON. |
+| **Live Integration** | `TestIntegration_LiveCLI_SecretProtector_EncryptedFile_KeyFile` | Compiles CLI and runs binary with SecretProtector encrypted credentials and `-key-file`. | **PASS** if binary enforces OS security checks on key file and outputs live JSON. |
+| **Live Integration** | `TestIntegration_LiveConnection_SecretProtector_PlatformIdiomatic` | Platform-aware live test executing `-key-env` on Windows and `-key-file` (0400 mode) on Linux. | **PASS** if connects to live bucket via platform-preferred key source. |
 
 ---
 
@@ -125,11 +139,15 @@ When executing live integration tests against Google Cloud Storage:
 
 ### Up-to-Date Coverage Statistics (80%+ Goal Enforced)
 
-| Package | Statement Coverage | Goal | Status |
+| Package / Module | Statement Coverage | Goal | Status |
 |---|---|---|---|
-| `criticalsys/gcsconntest` (Library Engine) | **88.6%** | 80.0% | **PASSED** |
-| `criticalsys/gcsconntest/cmd/gcsconntest` (CLI Application) | **86.0%** | 80.0% | **PASSED** |
-| **Combined Module Total** | **~87.5%** | **80.0%** | **PASSED** |
+| `criticalsys/gcsconntest` (Library Engine) | **90.0%** | 80.0% | **PASSED** |
+| `criticalsys/gcsconntest/cmd/gcsconntest` (CLI Engine) | **87.0%** | 80.0% | **PASSED** |
+| **Total Project Coverage** | **89.2%** | 80.0% | **PASSED** |
+
+#### Critical Function Coverage
+* **`NewClient`** (`tester.go`): **94.6%** statement coverage.
+* **`runApp`** (`cmd/gcsconntest/main.go`): **95.2%** statement coverage.
 
 ### How to Get and Refresh Coverage Stats
 

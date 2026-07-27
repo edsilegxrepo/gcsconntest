@@ -4,8 +4,11 @@ go 1.25.8
 
 require (
 	cloud.google.com/go/storage v1.64.0
+	criticalsys/secretprotector v0.0.0
 	google.golang.org/api v0.290.0
 )
+
+replace criticalsys/secretprotector => ../secretprotector
 
 require (
 	cel.dev/expr v0.25.2 // indirect

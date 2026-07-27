@@ -49,6 +49,9 @@ func runApp(ctx context.Context, args []string, stdout, stderr io.Writer, testFn
 		allowADC     bool
 		jsonOutput   bool
 		showVersion  bool
+		masterKey    string
+		masterKeyEnv string
+		masterKeyFile string
 	)
 
 	fs := flag.NewFlagSet("gcsconntest", flag.ContinueOnError)
@@ -63,6 +66,9 @@ func runApp(ctx context.Context, args []string, stdout, stderr io.Writer, testFn
 	fs.BoolVar(&allowADC, "adc", false, "Allow GCP Application Default Credentials if key file is omitted")
 	fs.BoolVar(&jsonOutput, "json", false, "Format output as structured JSON")
 	fs.BoolVar(&showVersion, "version", false, "Display application version")
+	fs.StringVar(&masterKey, "key", "", "SecretProtector direct master key (hex or raw)")
+	fs.StringVar(&masterKeyEnv, "key-env", "", "Environment variable name containing SecretProtector master key")
+	fs.StringVar(&masterKeyFile, "key-file", "", "File path containing SecretProtector master key")
 
 	if err := fs.Parse(args); err != nil {
 		return gcsconntest.ExitUsageError
@@ -74,13 +80,16 @@ func runApp(ctx context.Context, args []string, stdout, stderr io.Writer, testFn
 	}
 
 	cfg := gcsconntest.Config{
-		CredFile:     credFile,
-		AllowADC:     allowADC,
-		BucketName:   bucketName,
-		BucketPrefix: bucketPrefix,
-		ProjectID:    projectID,
-		MaxObjects:   maxObjects,
-		Timeout:      timeout,
+		CredFile:      credFile,
+		AllowADC:      allowADC,
+		BucketName:    bucketName,
+		BucketPrefix:  bucketPrefix,
+		ProjectID:     projectID,
+		MaxObjects:    maxObjects,
+		Timeout:       timeout,
+		MasterKey:     masterKey,
+		MasterKeyEnv:  masterKeyEnv,
+		MasterKeyFile: masterKeyFile,
 	}
 
 	if testFn == nil {

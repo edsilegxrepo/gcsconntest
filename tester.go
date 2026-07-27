@@ -14,24 +14,55 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"cloud.google.com/go/storage"
+	"criticalsys/secretprotector/pkg/libsecsecrets"
 	"google.golang.org/api/option"
 )
 
 // NewClient initializes a storage.Client using credentials specified in Config.
-// DATA FLOW: Config -> Credential Mode Resolution (CredJSON / CredFile / AllowADC) -> storage.NewClient -> *storage.Client / Error.
+// DATA FLOW: Config -> SecretProtector Key Resolution (optional) -> Credential Mode Resolution (CredJSON / CredFile / AllowADC) -> Decryption (optional) -> Memory Zeroing -> storage.NewClient -> *storage.Client / Error.
 func NewClient(ctx context.Context, cfg Config) (*storage.Client, error) {
 	cfg = cfg.Clean()
 
 	var opts []option.ClientOption
 
+	hasMasterKeyOpts := cfg.MasterKey != "" || cfg.MasterKeyEnv != "" || cfg.MasterKeyFile != ""
+	var masterKey []byte
+	if hasMasterKeyOpts {
+		var err error
+		masterKey, err = libsecsecrets.ResolveKey(ctx, cfg.MasterKey, cfg.MasterKeyEnv, cfg.MasterKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("%w: failed to resolve master key: %v", ErrAuthFailed, err)
+		}
+		defer libsecsecrets.ZeroBuffer(masterKey)
+	}
+
 	if len(cfg.CredJSON) > 0 {
-		opts = append(opts, option.WithAuthCredentialsJSON(option.ServiceAccount, cfg.CredJSON))
+		credBytes := cfg.CredJSON
+		if len(masterKey) > 0 {
+			decryptedStr, err := libsecsecrets.Decrypt(ctx, strings.TrimSpace(string(cfg.CredJSON)), masterKey)
+			if err != nil {
+				return nil, fmt.Errorf("%w: failed to decrypt CredJSON: %v", ErrAuthFailed, err)
+			}
+			credBytes = []byte(decryptedStr)
+			defer libsecsecrets.ZeroBuffer(credBytes)
+		}
+		opts = append(opts, option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes))
 	} else if cfg.CredFile != "" {
-		credBytes, err := os.ReadFile(cfg.CredFile)
+		rawBytes, err := os.ReadFile(cfg.CredFile)
 		if err != nil {
 			return nil, fmt.Errorf("%w: failed to read credentials file: %v", os.ErrNotExist, err)
+		}
+		credBytes := rawBytes
+		if len(masterKey) > 0 {
+			decryptedStr, err := libsecsecrets.Decrypt(ctx, strings.TrimSpace(string(rawBytes)), masterKey)
+			if err != nil {
+				return nil, fmt.Errorf("%w: failed to decrypt CredFile content: %v", ErrAuthFailed, err)
+			}
+			credBytes = []byte(decryptedStr)
+			defer libsecsecrets.ZeroBuffer(credBytes)
 		}
 		opts = append(opts, option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes))
 	} else if !cfg.AllowADC {

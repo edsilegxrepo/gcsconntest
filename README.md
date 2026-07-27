@@ -20,10 +20,12 @@
 * **Secret Management & Zero Disk Footprint**:
   * Credential file paths pass through `filepath.Clean` to protect against path traversal attacks.
   * In-memory credential JSON bytes (`CredJSON`) allow loading keys directly from Secret Managers (HashiCorp Vault, AWS Secrets Manager, GCP Secret Manager) without writing secrets to disk.
+  * **SecretProtector Obfuscation Support**: Optional integration with `criticalsys/secretprotector` enables AES-256-GCM authenticated decryption of stored service account credentials at rest using master keys (CLI flag, environment variable, or secure key file).
+  * **Memory Zeroing**: Decrypted credential byte buffers are immediately zeroed out in memory using `libsecsecrets.ZeroBuffer` after GCP client initialization.
   * Raw credentials and private keys are **never logged**, printed, or serialized into JSON result structures.
-* **Authentication Configuration**: Supports static Service Account JSON keys (`CredFile` / `CredJSON`) and keyless **Application Default Credentials (ADC)** (`AllowADC: true` / `-adc`).
+* **Authentication Configuration**: Supports static Service Account JSON keys (`CredFile` / `CredJSON`), AES-256-GCM encrypted credentials via **SecretProtector** (`MasterKey` / `MasterKeyEnv` / `MasterKeyFile`), and keyless **Application Default Credentials (ADC)** (`AllowADC: true` / `-adc`).
 * **Least-Privilege RBAC / IAM**: Requires only read-only permissions (`storage.buckets.get` and `storage.objects.list`). Recommended IAM roles include `roles/storage.objectViewer` or equivalent custom roles. Never requests write or delete permissions.
-* **Current & Non-Vulnerable Dependencies**: Built with modern, actively maintained standard Google Cloud SDK dependencies (`cloud.google.com/go/storage`, `google.golang.org/api`, standard Go toolchain).
+* **Current & Non-Vulnerable Dependencies**: Built with modern, actively maintained standard Google Cloud SDK dependencies (`cloud.google.com/go/storage`, `google.golang.org/api`, `criticalsys/secretprotector`, standard Go toolchain).
 * **Unprivileged Execution Context**: Designed to run cleanly in unprivileged, non-root environments (e.g. non-root Docker containers, restricted Kubernetes pods, standard OS user accounts) with zero system root requirements.
 
 > For complete security architecture diagrams, IAM models, and ADC vs. JSON key comparisons, see the [Security Architecture section in ARCHITECTURE.md](ARCHITECTURE.md#4-security-architecture).
@@ -50,7 +52,7 @@ The codebase adheres to enterprise Go best practices:
 
 | Flag | Type | Description | Required | Default |
 |---|---|---|---|---|
-| `-credentials` | `string` | Path to the Google Cloud service account JSON credential key file. | No* | `""` |
+| `-credentials` | `string` | Path to the Google Cloud service account JSON credential key file (supports plaintext or SecretProtector encrypted files). | No* | `""` |
 | `-adc` | `bool` | Allow falling back to GCP Application Default Credentials if credentials file is omitted. | No* | `false` |
 | `-bucket` | `string` | Name of the target GCS bucket to test. | **Yes** | `""` |
 | `-project` | `string` | Google Cloud Project ID. | **Yes** | `""` |
@@ -58,6 +60,9 @@ The codebase adheres to enterprise Go best practices:
 | `-max` | `int` | Maximum number of object names to retrieve. | No | `10` |
 | `-timeout` | `duration` | Operation timeout duration (e.g., `10s`, `1m`, `30s`). | No | `30s` |
 | `-json` | `bool` | Output test results as formatted JSON for machine consumption. | No | `false` |
+| `-key` | `string` | Direct SecretProtector master key (64-char hex or 32-byte raw) to decrypt `-credentials` content. | No | `""` |
+| `-key-env` | `string` | Environment variable name containing SecretProtector master key. | No | `""` |
+| `-key-file` | `string` | Path to restricted key file containing SecretProtector master key. | No | `""` |
 | `-version` | `bool` | Display application version string and exit. | No | `false` |
 
 *\*Either `-credentials` or `-adc` (or environment `GOOGLE_APPLICATION_CREDENTIALS`) is required.*

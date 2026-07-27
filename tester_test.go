@@ -6,6 +6,7 @@ package gcsconntest
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"criticalsys/secretprotector/pkg/libsecsecrets"
 )
 
 type mockStorageClient struct {
@@ -324,3 +326,148 @@ func TestNewClientNoCredentials(t *testing.T) {
 		t.Error("expected error when no credentials and ADC false, got nil")
 	}
 }
+
+func TestNewClient_SecretProtector_EncryptedCredJSON_DirectKey(t *testing.T) {
+	ctx := context.Background()
+	hexKey, err := libsecsecrets.GenerateKey()
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+	keyBytes, _ := hex.DecodeString(hexKey)
+
+	plainJSON := `{"type": "service_account", "project_id": "test"}`
+	encryptedJSON, err := libsecsecrets.Encrypt(ctx, plainJSON, keyBytes)
+	if err != nil {
+		t.Fatalf("failed to encrypt json: %v", err)
+	}
+
+	cfg := Config{
+		CredJSON:   []byte(encryptedJSON),
+		MasterKey:  hexKey,
+		BucketName: "my-bucket",
+		ProjectID:  "my-project",
+		Timeout:    1 * time.Second,
+	}
+
+	_, err = NewClient(ctx, cfg)
+	if err == nil {
+		t.Error("expected auth error for invalid SA key format, got nil")
+	}
+	if errors.Is(err, ErrInvalidConfig) {
+		t.Errorf("unexpected ErrInvalidConfig: %v", err)
+	}
+}
+
+func TestNewClient_SecretProtector_EncryptedCredFile_KeyEnv(t *testing.T) {
+	ctx := context.Background()
+	hexKey, err := libsecsecrets.GenerateKey()
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+	keyBytes, _ := hex.DecodeString(hexKey)
+
+	envVar := "TEST_GCSCONNTEST_MASTER_KEY"
+	t.Setenv(envVar, hexKey)
+
+	plainJSON := `{"type": "service_account", "project_id": "test"}`
+	encryptedJSON, err := libsecsecrets.Encrypt(ctx, plainJSON, keyBytes)
+	if err != nil {
+		t.Fatalf("failed to encrypt json: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	credFile := filepath.Join(tmpDir, "encrypted_cred.json")
+	if err := os.WriteFile(credFile, []byte(encryptedJSON), 0o644); err != nil {
+		t.Fatalf("failed to write cred file: %v", err)
+	}
+
+	cfg := Config{
+		CredFile:     credFile,
+		MasterKeyEnv: envVar,
+		BucketName:   "my-bucket",
+		ProjectID:    "my-project",
+		Timeout:      1 * time.Second,
+	}
+
+	_, err = NewClient(ctx, cfg)
+	if err == nil {
+		t.Error("expected auth error for invalid SA key format, got nil")
+	}
+}
+
+func TestNewClient_SecretProtector_EncryptedCredFile_KeyFile(t *testing.T) {
+	ctx := context.Background()
+	hexKey, err := libsecsecrets.GenerateKey()
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+	keyBytes, _ := hex.DecodeString(hexKey)
+
+	tmpDir := t.TempDir()
+	keyFile := filepath.Join(tmpDir, "master.key")
+	if err := os.WriteFile(keyFile, []byte(hexKey), 0o600); err != nil {
+		t.Fatalf("failed to write key file: %v", err)
+	}
+
+	plainJSON := `{"type": "service_account", "project_id": "test"}`
+	encryptedJSON, err := libsecsecrets.Encrypt(ctx, plainJSON, keyBytes)
+	if err != nil {
+		t.Fatalf("failed to encrypt json: %v", err)
+	}
+
+	credFile := filepath.Join(tmpDir, "encrypted_cred.json")
+	if err := os.WriteFile(credFile, []byte(encryptedJSON), 0o644); err != nil {
+		t.Fatalf("failed to write cred file: %v", err)
+	}
+
+	cfg := Config{
+		CredFile:      credFile,
+		MasterKeyFile: keyFile,
+		BucketName:    "my-bucket",
+		ProjectID:     "my-project",
+		Timeout:       1 * time.Second,
+	}
+
+	_, err = NewClient(ctx, cfg)
+	if err == nil {
+		t.Error("expected auth error for invalid SA key format, got nil")
+	}
+}
+
+func TestNewClient_SecretProtector_InvalidMasterKey(t *testing.T) {
+	ctx := context.Background()
+	cfg := Config{
+		CredJSON:   []byte("encrypted_string_here"),
+		MasterKey:  "invalidkey",
+		BucketName: "my-bucket",
+		ProjectID:  "my-project",
+	}
+
+	_, err := NewClient(ctx, cfg)
+	if err == nil {
+		t.Error("expected error for invalid master key, got nil")
+	}
+	if !errors.Is(err, ErrAuthFailed) {
+		t.Errorf("expected ErrAuthFailed, got: %v", err)
+	}
+}
+
+func TestNewClient_SecretProtector_DecryptionFailure(t *testing.T) {
+	ctx := context.Background()
+	hexKey, _ := libsecsecrets.GenerateKey()
+	cfg := Config{
+		CredJSON:   []byte("invalidbase64data!!"),
+		MasterKey:  hexKey,
+		BucketName: "my-bucket",
+		ProjectID:  "my-project",
+	}
+
+	_, err := NewClient(ctx, cfg)
+	if err == nil {
+		t.Error("expected error for failed decryption, got nil")
+	}
+	if !errors.Is(err, ErrAuthFailed) {
+		t.Errorf("expected ErrAuthFailed, got: %v", err)
+	}
+}
+

@@ -42,6 +42,12 @@ type Config struct {
 	MaxObjects int
 	// Timeout specifies the maximum time allowed for the connection test. Defaults to 30s if <= 0.
 	Timeout time.Duration
+	// MasterKey is an optional raw/hex SecretProtector master key used to decrypt CredFile or CredJSON.
+	MasterKey string
+	// MasterKeyEnv is the name of an environment variable containing the SecretProtector master key.
+	MasterKeyEnv string
+	// MasterKeyFile is the file path containing the SecretProtector master key.
+	MasterKeyFile string
 }
 
 // Clean returns a copy of Config with sanitized file paths and defaulted parameters.
@@ -50,6 +56,9 @@ func (c Config) Clean() Config {
 	cfg := c
 	if cfg.CredFile != "" {
 		cfg.CredFile = filepath.Clean(cfg.CredFile)
+	}
+	if cfg.MasterKeyFile != "" {
+		cfg.MasterKeyFile = filepath.Clean(cfg.MasterKeyFile)
 	}
 	if cfg.MaxObjects <= 0 {
 		cfg.MaxObjects = DefaultMaxObjects

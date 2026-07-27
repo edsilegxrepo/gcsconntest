@@ -234,7 +234,13 @@ graph TD
 3. **Credential Isolation**:
    * Raw credential JSON bytes (`CredJSON`) are stored temporarily in memory and never logged or serialized into error outputs or JSON diagnostic results.
 
-4. **Resource Bounds & Memory Safety**:
+4. **SecretProtector Obfuscation & Memory Hygiene**:
+   * Integrated with `criticalsys/secretprotector` ([libsecsecrets](pkg/libsecsecrets)) to support AES-256-GCM encrypted service account credentials at rest.
+   * Master keys are resolved across multiple sources in strict hierarchical order: Direct Input (`MasterKey`) > Environment Variable (`MasterKeyEnv`) > Secure Key File (`MasterKeyFile`).
+   * Decrypted credential byte slices in memory are immediately zeroed out via `libsecsecrets.ZeroBuffer()` after initializing `storage.Client`.
+   * Enforces platform-specific security checks during key file resolution: strict owner-only mode (`0400`/`0600`) on Linux/Unix, and insecure location checks (`Public`, `\temp\`) on Windows.
+
+5. **Resource Bounds & Memory Safety**:
    * Query bounds (`MaxObjects`) and operation timeouts (`Timeout`) prevent resource exhaustion attacks or hanging gRPC sockets.
 
 ---
@@ -243,24 +249,29 @@ graph TD
 
 #### Architectural Comparison
 
-| Dimension | Service Account JSON Key (`CredFile` / `CredJSON`) | Application Default Credentials (`AllowADC` / `-adc`) |
-|---|---|---|
-| **Mechanism** | Static long-lived private RSA key embedded in a JSON file. | Dynamic metadata token resolution from environment or IAM token server. |
-| **Storage Requirement** | Requires downloading key file to disk or storing as secret in environment. | **Zero key files required** on GCP infrastructure. |
-| **Token Exchange** | Signs local JWT using private RSA key -> exchanges with `oauth2.googleapis.com`. | Queries local environment or internal link-local Metadata server (`169.254.169.254`). |
-| **Security Risk Profile** | **High risk of key leakage** if committed to git or stored unencrypted on disk. | **Keyless & Key-rotation free**. Identity is tied to compute instance / workload. |
-| **Ideal Environment** | External non-GCP servers, legacy CI/CD pipelines, local development without `gcloud`. | Production GCP environments (GKE Workload Identity, Cloud Run, Cloud Functions, GCE VMs). |
+| Dimension | Service Account JSON Key (`CredFile` / `CredJSON`) | SecretProtector Encrypted Credentials (`MasterKey` / `MasterKeyEnv` / `MasterKeyFile`) | Application Default Credentials (`AllowADC` / `-adc`) |
+|---|---|---|---|
+| **Mechanism** | Static long-lived private RSA key embedded in a plaintext JSON file. | AES-256-GCM encrypted Service Account JSON decrypted in-memory on demand. | Dynamic metadata token resolution from environment or IAM token server. |
+| **Storage Requirement** | Requires storing key file in plaintext on disk or config. | Encrypted Base64 string stored at rest + Master Key in env/file. | **Zero key files required** on GCP infrastructure. |
+| **Token Exchange** | Signs local JWT using private RSA key -> exchanges with `oauth2.googleapis.com`. | Decrypts JSON -> Signs local JWT -> exchanges with `oauth2.googleapis.com`. | Queries local environment or internal link-local Metadata server (`169.254.169.254`). |
+| **Security Risk Profile** | **High risk of key leakage** if committed to git or stored unencrypted on disk. | **Protected at rest**; master key managed via OS environment/secure key file. | **Keyless & Key-rotation free**. Identity is tied to compute instance / workload. |
+| **Ideal Environment** | Legacy systems requiring local key files. | Hybrid environments requiring encrypted credentials at rest without native cloud KMS. | Production GCP environments (GKE Workload Identity, Cloud Run, Cloud Functions, GCE VMs). |
 
 ---
 
 #### Detailed Resolution Hierarchy & Mechanics
 
-1. **Service Account Key Mode (`CredFile` / `CredJSON`)**:
+1. **SecretProtector Obfuscated Credentials Mode**:
+   * If master key resolution fields (`MasterKey`, `MasterKeyEnv`, `MasterKeyFile`) are provided, `NewClient` resolves the 32-byte master key via `libsecsecrets.ResolveKey`.
+   * Decrypts the raw Base64 payload from `CredJSON` or `CredFile` in-memory.
+   * Immediately zeroes out master key and decrypted JSON buffers using `defer libsecsecrets.ZeroBuffer(...)`.
+
+2. **Service Account Key Mode (`CredFile` / `CredJSON`)**:
    * **File Path (`CredFile`)**: Sanitizes path via `filepath.Clean`, reads key content from disk using `os.ReadFile`, and passes raw bytes into Google OAuth2 transport engine.
    * **Raw Bytes (`CredJSON`)**: Allows passing JSON key bytes directly from secret managers (HashiCorp Vault, AWS Secrets Manager) without creating temporary files on disk.
    * **GCP SDK Integration**: Implemented via `option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes)`.
 
-2. **Application Default Credentials Mode (`AllowADC`)**:
+3. **Application Default Credentials Mode (`AllowADC`)**:
    * When `AllowADC: true` is passed (or `-adc` CLI flag), `gcsconntest` instructs the Google Cloud SDK to execute its standardized **ADC Discovery Chain**:
      1. **Environment Variable**: Checks if `GOOGLE_APPLICATION_CREDENTIALS` points to a credential file.
      2. **User Credentials**: Checks for local credentials created via `gcloud auth application-default login` (`~/.config/gcloud/application_default_credentials.json`).
@@ -270,29 +281,57 @@ graph TD
 
 #### Implementation in Code ([tester.go](tester.go))
 
-The authentication resolver in `NewClient` follows a strict precedence order to prevent misconfigurations:
+The authentication resolver in `NewClient` follows a strict precedence order and memory hygiene protocol:
 
 ```go
 func NewClient(ctx context.Context, cfg Config) (*storage.Client, error) {
 	cfg = cfg.Clean()
 	var opts []option.ClientOption
 
-	// 1. High Precedence: Raw in-memory JSON bytes (prevents disk IO)
+	// 1. Optional SecretProtector Master Key Resolution
+	hasMasterKeyOpts := cfg.MasterKey != "" || cfg.MasterKeyEnv != "" || cfg.MasterKeyFile != ""
+	var masterKey []byte
+	if hasMasterKeyOpts {
+		var err error
+		masterKey, err = libsecsecrets.ResolveKey(ctx, cfg.MasterKey, cfg.MasterKeyEnv, cfg.MasterKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("%w: failed to resolve master key: %v", ErrAuthFailed, err)
+		}
+		defer libsecsecrets.ZeroBuffer(masterKey)
+	}
+
+	// 2. High Precedence: Raw CredJSON (with optional decryption)
 	if len(cfg.CredJSON) > 0 {
-		opts = append(opts, option.WithAuthCredentialsJSON(option.ServiceAccount, cfg.CredJSON))
+		credBytes := cfg.CredJSON
+		if len(masterKey) > 0 {
+			decryptedStr, err := libsecsecrets.Decrypt(ctx, strings.TrimSpace(string(cfg.CredJSON)), masterKey)
+			if err != nil {
+				return nil, fmt.Errorf("%w: failed to decrypt CredJSON: %v", ErrAuthFailed, err)
+			}
+			credBytes = []byte(decryptedStr)
+			defer libsecsecrets.ZeroBuffer(credBytes)
+		}
+		opts = append(opts, option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes))
 	} else if cfg.CredFile != "" {
-		// 2. Medium Precedence: Credential key file path on disk
-		credBytes, err := os.ReadFile(cfg.CredFile)
+		// 3. Medium Precedence: CredFile path (with optional decryption)
+		rawBytes, err := os.ReadFile(cfg.CredFile)
 		if err != nil {
 			return nil, fmt.Errorf("%w: failed to read credentials file: %v", os.ErrNotExist, err)
 		}
+		credBytes := rawBytes
+		if len(masterKey) > 0 {
+			decryptedStr, err := libsecsecrets.Decrypt(ctx, strings.TrimSpace(string(rawBytes)), masterKey)
+			if err != nil {
+				return nil, fmt.Errorf("%w: failed to decrypt CredFile content: %v", ErrAuthFailed, err)
+			}
+			credBytes = []byte(decryptedStr)
+			defer libsecsecrets.ZeroBuffer(credBytes)
+		}
 		opts = append(opts, option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes))
 	} else if !cfg.AllowADC {
-		// 3. Fallback Guard: Reject if no key is provided AND ADC is explicit false
 		return nil, fmt.Errorf("%w: no credentials file, JSON, or ADC enabled", ErrInvalidConfig)
 	}
 
-	// If AllowADC is true and no keys are supplied, storage.NewClient initializes ADC automatically
 	client, err := storage.NewClient(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrAuthFailed, err)

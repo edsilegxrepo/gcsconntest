@@ -11,6 +11,7 @@ package gcsconntest
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,6 +19,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"criticalsys/secretprotector/pkg/libsecsecrets"
 )
 
 // getIntegrationEnv retrieves live testing parameters from environment variables.
@@ -282,3 +285,257 @@ func TestIntegration_LiveCLI_ExecuteBinary(t *testing.T) {
 
 	t.Logf("Live CLI Binary Success: Outputted JSON result for bucket '%s'", bucket)
 }
+
+func TestIntegration_LiveConnection_SecretProtector_EncryptedFile(t *testing.T) {
+	bucket, project, credPath := getIntegrationEnv(t)
+	if credPath == "" {
+		t.Skip("Skipping live SecretProtector test: credentials file not set")
+	}
+
+	rawJSON, err := os.ReadFile(credPath)
+	if err != nil {
+		t.Fatalf("failed to read live SA credentials file: %v", err)
+	}
+
+	ctx := context.Background()
+	hexKey, err := libsecsecrets.GenerateKey()
+	if err != nil {
+		t.Fatalf("failed to generate SecretProtector key: %v", err)
+	}
+	keyBytes, _ := hex.DecodeString(hexKey)
+
+	encryptedStr, err := libsecsecrets.Encrypt(ctx, string(rawJSON), keyBytes)
+	if err != nil {
+		t.Fatalf("failed to encrypt SA credentials: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	encCredPath := filepath.Join(tmpDir, "encrypted-sa.json")
+	if err := os.WriteFile(encCredPath, []byte(encryptedStr), 0o644); err != nil {
+		t.Fatalf("failed to write encrypted cred file: %v", err)
+	}
+
+	cfg := Config{
+		CredFile:   encCredPath,
+		MasterKey:  hexKey,
+		BucketName: bucket,
+		ProjectID:  project,
+		MaxObjects: 3,
+		Timeout:    30 * time.Second,
+	}
+
+	res, err := TestConnection(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Live connection failed with SecretProtector encrypted file: %v", err)
+	}
+
+	if res.BucketName != bucket {
+		t.Errorf("expected bucket %s, got %s", bucket, res.BucketName)
+	}
+	t.Logf("Live SecretProtector Integration Success: Listed %d objects from encrypted SA file in bucket '%s'", res.TotalListed, res.BucketName)
+}
+
+func TestIntegration_LiveCLI_SecretProtector_EncryptedFile_KeyEnv(t *testing.T) {
+	bucket, project, credPath := getIntegrationEnv(t)
+	if credPath == "" {
+		t.Skip("Skipping live CLI SecretProtector test: credentials file not set")
+	}
+
+	rawJSON, err := os.ReadFile(credPath)
+	if err != nil {
+		t.Fatalf("failed to read live SA credentials file: %v", err)
+	}
+
+	ctx := context.Background()
+	hexKey, err := libsecsecrets.GenerateKey()
+	if err != nil {
+		t.Fatalf("failed to generate SecretProtector key: %v", err)
+	}
+	keyBytes, _ := hex.DecodeString(hexKey)
+
+	encryptedStr, err := libsecsecrets.Encrypt(ctx, string(rawJSON), keyBytes)
+	if err != nil {
+		t.Fatalf("failed to encrypt SA credentials: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	encCredPath := filepath.Join(tmpDir, "encrypted-sa.json")
+	if err := os.WriteFile(encCredPath, []byte(encryptedStr), 0o644); err != nil {
+		t.Fatalf("failed to write encrypted cred file: %v", err)
+	}
+
+	binaryPath := filepath.Join(tmpDir, "gcsconntest_test_bin")
+	if os.Getenv("GOOS") == "windows" || filepath.Separator == '\\' {
+		binaryPath += ".exe"
+	}
+
+	buildCmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/gcsconntest")
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to build test binary: %v (output: %s)", err, out)
+	}
+
+	envVarName := "LIVE_TEST_SECRETPROTECTOR_KEY"
+	cmd := exec.Command(binaryPath, "-credentials", encCredPath, "-key-env", envVarName, "-bucket", bucket, "-project", project, "-json", "-max", "2")
+	cmd.Env = append(os.Environ(), fmt.Sprintf("%s=%s", envVarName, hexKey))
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Live CLI binary execution with SecretProtector failed: %v (stderr: %s)", err, stderr.String())
+	}
+
+	if !strings.Contains(stdout.String(), fmt.Sprintf(`"bucket_name": "%s"`, bucket)) {
+		t.Errorf("expected CLI stdout to contain JSON bucket_name '%s', got: %s", bucket, stdout.String())
+	}
+
+	t.Logf("Live CLI SecretProtector Success: Outputted JSON result for bucket '%s'", bucket)
+}
+
+func TestIntegration_LiveCLI_SecretProtector_EncryptedFile_KeyFile(t *testing.T) {
+	bucket, project, credPath := getIntegrationEnv(t)
+	if credPath == "" {
+		t.Skip("Skipping live CLI SecretProtector key-file test: credentials file not set")
+	}
+
+	rawJSON, err := os.ReadFile(credPath)
+	if err != nil {
+		t.Fatalf("failed to read live SA credentials file: %v", err)
+	}
+
+	ctx := context.Background()
+	hexKey, err := libsecsecrets.GenerateKey()
+	if err != nil {
+		t.Fatalf("failed to generate SecretProtector key: %v", err)
+	}
+	keyBytes, _ := hex.DecodeString(hexKey)
+
+	encryptedStr, err := libsecsecrets.Encrypt(ctx, string(rawJSON), keyBytes)
+	if err != nil {
+		t.Fatalf("failed to encrypt SA credentials: %v", err)
+	}
+
+	// Create key file in user home dir subfolder to satisfy Windows/Linux path & permission security checks
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = t.TempDir()
+	}
+	keyDir := filepath.Join(homeDir, ".gcsconntest_test_keys")
+	_ = os.MkdirAll(keyDir, 0o700)
+	defer func() {
+		_ = os.RemoveAll(keyDir)
+	}()
+
+	keyFilePath := filepath.Join(keyDir, "live_master.key")
+	if err := os.WriteFile(keyFilePath, []byte(hexKey), 0o600); err != nil {
+		t.Fatalf("failed to write key file: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	encCredPath := filepath.Join(tmpDir, "encrypted-sa.json")
+	if err := os.WriteFile(encCredPath, []byte(encryptedStr), 0o644); err != nil {
+		t.Fatalf("failed to write encrypted cred file: %v", err)
+	}
+
+	binaryPath := filepath.Join(tmpDir, "gcsconntest_test_bin")
+	if os.Getenv("GOOS") == "windows" || filepath.Separator == '\\' {
+		binaryPath += ".exe"
+	}
+
+	buildCmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/gcsconntest")
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to build test binary: %v (output: %s)", err, out)
+	}
+
+	cmd := exec.Command(binaryPath, "-credentials", encCredPath, "-key-file", keyFilePath, "-bucket", bucket, "-project", project, "-json", "-max", "2")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Live CLI binary execution with SecretProtector key-file failed: %v (stderr: %s)", err, stderr.String())
+	}
+
+	if !strings.Contains(stdout.String(), fmt.Sprintf(`"bucket_name": "%s"`, bucket)) {
+		t.Errorf("expected CLI stdout to contain JSON bucket_name '%s', got: %s", bucket, stdout.String())
+	}
+
+	t.Logf("Live CLI SecretProtector Key-File Success: Outputted JSON result for bucket '%s'", bucket)
+}
+
+func TestIntegration_LiveConnection_SecretProtector_PlatformIdiomatic(t *testing.T) {
+	bucket, project, credPath := getIntegrationEnv(t)
+	if credPath == "" {
+		t.Skip("Skipping live platform-idiomatic SecretProtector test: credentials file not set")
+	}
+
+	rawJSON, err := os.ReadFile(credPath)
+	if err != nil {
+		t.Fatalf("failed to read live SA credentials file: %v", err)
+	}
+
+	ctx := context.Background()
+	hexKey, err := libsecsecrets.GenerateKey()
+	if err != nil {
+		t.Fatalf("failed to generate SecretProtector key: %v", err)
+	}
+	keyBytes, _ := hex.DecodeString(hexKey)
+
+	encryptedStr, err := libsecsecrets.Encrypt(ctx, string(rawJSON), keyBytes)
+	if err != nil {
+		t.Fatalf("failed to encrypt SA credentials: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	encCredPath := filepath.Join(tmpDir, "encrypted-sa.json")
+	if err := os.WriteFile(encCredPath, []byte(encryptedStr), 0o644); err != nil {
+		t.Fatalf("failed to write encrypted cred file: %v", err)
+	}
+
+	cfg := Config{
+		CredFile:   encCredPath,
+		BucketName: bucket,
+		ProjectID:  project,
+		MaxObjects: 2,
+		Timeout:    30 * time.Second,
+	}
+
+	if os.Getenv("GOOS") == "windows" || filepath.Separator == '\\' {
+		// On Windows, environment variable resolution (-key-env) is idiomatic
+		envVarName := "PLATFORM_IDIOMATIC_MASTER_KEY"
+		t.Setenv(envVarName, hexKey)
+		cfg.MasterKeyEnv = envVarName
+		t.Logf("Platform Idiomatic Test (Windows): Using MasterKeyEnv (%s)", envVarName)
+	} else {
+		// On Linux/Unix, restricted permission key file (-key-file) is idiomatic
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			homeDir = tmpDir
+		}
+		keyDir := filepath.Join(homeDir, ".gcsconntest_idiomatic_keys")
+		_ = os.MkdirAll(keyDir, 0o700)
+		defer func() { _ = os.RemoveAll(keyDir) }()
+
+		keyFilePath := filepath.Join(keyDir, "master.key")
+		if err := os.WriteFile(keyFilePath, []byte(hexKey), 0o400); err != nil {
+			t.Fatalf("failed to write restricted key file: %v", err)
+		}
+		cfg.MasterKeyFile = keyFilePath
+		t.Logf("Platform Idiomatic Test (Linux/Unix): Using MasterKeyFile (%s, mode 0400)", keyFilePath)
+	}
+
+	res, err := TestConnection(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Live platform-idiomatic connection failed: %v", err)
+	}
+
+	if res.BucketName != bucket {
+		t.Errorf("expected bucket %s, got %s", bucket, res.BucketName)
+	}
+	t.Logf("Live Platform Idiomatic SecretProtector Test Success: Bucket '%s'", res.BucketName)
+}
+
+
+

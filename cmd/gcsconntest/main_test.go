@@ -158,3 +158,41 @@ func TestRunApp_NilTestFnFallback(t *testing.T) {
 		t.Errorf("expected exit code %d, got %d", gcsconntest.ExitUsageError, code)
 	}
 }
+
+func TestRunApp_SecretProtectorFlags(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	var capturedCfg gcsconntest.Config
+	mockTest := func(ctx context.Context, cfg gcsconntest.Config) (*gcsconntest.Result, error) {
+		capturedCfg = cfg
+		return &gcsconntest.Result{
+			BucketName:  cfg.BucketName,
+			ObjectNames: []string{"test.txt"},
+			TotalListed: 1,
+		}, nil
+	}
+
+	args := []string{
+		"-credentials", "enc_credentials.json",
+		"-bucket", "mybucket",
+		"-project", "myproj",
+		"-key", "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+		"-key-env", "MY_KEY_ENV",
+		"-key-file", "/path/to/key.file",
+	}
+
+	code := runApp(context.Background(), args, &stdout, &stderr, mockTest)
+	if code != gcsconntest.ExitSuccess {
+		t.Errorf("expected exit code %d, got %d", gcsconntest.ExitSuccess, code)
+	}
+
+	if capturedCfg.MasterKey != "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" {
+		t.Errorf("unexpected MasterKey: %s", capturedCfg.MasterKey)
+	}
+	if capturedCfg.MasterKeyEnv != "MY_KEY_ENV" {
+		t.Errorf("unexpected MasterKeyEnv: %s", capturedCfg.MasterKeyEnv)
+	}
+	if capturedCfg.MasterKeyFile != "/path/to/key.file" {
+		t.Errorf("unexpected MasterKeyFile: %s", capturedCfg.MasterKeyFile)
+	}
+}
+
