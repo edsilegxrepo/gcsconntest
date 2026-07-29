@@ -1,6 +1,6 @@
 # System Architecture Documentation
 
-This document describes the architectural design, security model, data flows, dependencies, performance optimizations, and external integration patterns for `criticalsys/gcsconntest`.
+This document describes the architectural design, security model, data flows, dependencies, performance optimizations, and external integration patterns for `criticalsys.net/gcsconntest`.
 
 ---
 
@@ -17,7 +17,7 @@ graph TD
         AA[External Go Service / Health Checker] -->|Imports Package| C[TestConnection API]
     end
 
-    subgraph Core Library Package - criticalsys/gcsconntest
+    subgraph Core Library Package - criticalsys.net/gcsconntest
         B -->|Config Struct| C
         C -->|Validates & Cleans Config| D[Config.Validate & Clean]
         C -->|Instantiates Auth Options| E[NewClient Initialization]
@@ -39,7 +39,7 @@ graph TD
 ### 1.2 Core Design Choices
 
 1. **Dual-Mode Architecture (CLI & Go Library)**:
-   * Core logic resides in the root package (`package gcsconntest`), allowing external Go services to import `criticalsys/gcsconntest` directly.
+   * Core logic resides in the root package (`package gcsconntest`), allowing external Go services to import `criticalsys.net/gcsconntest` directly.
    * CLI binary logic is contained within [cmd/gcsconntest/main.go](cmd/gcsconntest/main.go).
 
 2. **Interface-Driven Decoupling (`StorageClient`)**:
@@ -235,7 +235,7 @@ graph TD
    * Raw credential JSON bytes (`CredJSON`) are stored temporarily in memory and never logged or serialized into error outputs or JSON diagnostic results.
 
 4. **SecretProtector Obfuscation & Memory Hygiene**:
-   * Integrated with `criticalsys/secretprotector` ([libsecsecrets](pkg/libsecsecrets)) to support AES-256-GCM encrypted service account credentials at rest.
+   * Integrated with `criticalsys.net/secretprotector` ([libsecsecrets](pkg/libsecsecrets)) to support AES-256-GCM encrypted service account credentials at rest.
    * Master keys are resolved across multiple sources in strict hierarchical order: Direct Input (`MasterKey`) > Environment Variable (`MasterKeyEnv`) > Secure Key File (`MasterKeyFile`).
    * Decrypted credential byte slices in memory are immediately zeroed out via `libsecsecrets.ZeroBuffer()` after initializing `storage.Client`.
    * Enforces platform-specific security checks during key file resolution: strict owner-only mode (`0400`/`0600`) on Linux/Unix, and insecure location checks (`Public`, `\temp\`) on Windows.
@@ -346,7 +346,7 @@ func NewClient(ctx context.Context, cfg Config) (*storage.Client, error) {
 
 ### 5.1 Architecture for External Integration
 
-External Go microservices and monitoring utilities (such as `health-checker`) can import `criticalsys/gcsconntest` directly as a library module. The diagram below illustrates how an HTTP server or health checker integrates `gcsconntest` into its probe lifecycle:
+External Go microservices and monitoring utilities (such as `health-checker`) can import `criticalsys.net/gcsconntest` directly as a library module. The diagram below illustrates how an HTTP server or health checker integrates `gcsconntest` into its probe lifecycle:
 
 ```mermaid
 graph TD
@@ -373,10 +373,10 @@ graph TD
 ### 5.2 Step-by-Step Implementation Example
 
 #### Step 1: Add Dependency in External Application
-In the external Go application (`health-checker`), import `criticalsys/gcsconntest`:
+In the external Go application (`health-checker`), import `criticalsys.net/gcsconntest`:
 
 ```bash
-go get criticalsys/gcsconntest@latest
+go get criticalsys.net/gcsconntest@latest
 ```
 
 #### Step 2: Implement HTTP Health Handler
@@ -392,7 +392,7 @@ import (
 	"net/http"
 	"time"
 
-	"criticalsys/gcsconntest"
+	"criticalsys.net/gcsconntest"
 )
 
 // GCSHealthChecker wraps GCS connection testing parameters for probe execution.

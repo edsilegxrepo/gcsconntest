@@ -14,6 +14,7 @@ import (
 	"os"
 	"testing"
 
+	"golang.org/x/oauth2"
 	"google.golang.org/api/googleapi"
 )
 
@@ -102,6 +103,11 @@ func TestClassifyError(t *testing.T) {
 			name:     "wrapped ErrApiError",
 			err:      fmt.Errorf("%w: list failed", ErrApiError),
 			wantCode: ExitApiError,
+		},
+		{
+			name:     "oauth2 retrieve error",
+			err:      &oauth2.RetrieveError{Response: nil, Body: []byte("invalid_grant")},
+			wantCode: ExitAuthError,
 		},
 		{
 			name:     "generic unknown error",

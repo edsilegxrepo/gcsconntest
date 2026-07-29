@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
-	"criticalsys/secretprotector/pkg/libsecsecrets"
+	"criticalsys.net/secretprotector/pkg/libsecsecrets"
 )
 
 type mockStorageClient struct {
 	attrsFunc   func(ctx context.Context, bucketName string) (*storage.BucketAttrs, error)
-	listObjects func(ctx context.Context, bucketName string, prefix string, maxObjects int) ([]string, error)
+	listObjects func(ctx context.Context, bucketName, prefix string, maxObjects int) ([]string, error)
 }
 
 func (m *mockStorageClient) BucketAttrs(ctx context.Context, bucketName string) (*storage.BucketAttrs, error) {
@@ -29,7 +29,7 @@ func (m *mockStorageClient) BucketAttrs(ctx context.Context, bucketName string) 
 	return &storage.BucketAttrs{Name: bucketName, Location: "US"}, nil
 }
 
-func (m *mockStorageClient) ListObjects(ctx context.Context, bucketName string, prefix string, maxObjects int) ([]string, error) {
+func (m *mockStorageClient) ListObjects(ctx context.Context, bucketName, prefix string, maxObjects int) ([]string, error) {
 	if m.listObjects != nil {
 		return m.listObjects(ctx, bucketName, prefix, maxObjects)
 	}
@@ -158,7 +158,7 @@ func TestConnectionWithStorageClient_ListError(t *testing.T) {
 	}
 
 	mock := &mockStorageClient{
-		listObjects: func(ctx context.Context, bucketName string, prefix string, maxObjects int) ([]string, error) {
+		listObjects: func(ctx context.Context, bucketName, prefix string, maxObjects int) ([]string, error) {
 			return nil, errors.New("iteration failed")
 		},
 	}
@@ -470,4 +470,3 @@ func TestNewClient_SecretProtector_DecryptionFailure(t *testing.T) {
 		t.Errorf("expected ErrAuthFailed, got: %v", err)
 	}
 }
-

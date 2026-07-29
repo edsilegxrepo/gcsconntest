@@ -1,14 +1,15 @@
-module criticalsys/gcsconntest
+module criticalsys.net/gcsconntest
 
 go 1.25.8
 
 require (
 	cloud.google.com/go/storage v1.64.0
-	criticalsys/secretprotector v0.0.0
-	google.golang.org/api v0.290.0
+	criticalsys.net/secretprotector v0.0.0
+	golang.org/x/oauth2 v0.36.0
+	google.golang.org/api v0.291.0
 )
 
-replace criticalsys/secretprotector => ../secretprotector
+replace criticalsys.net/secretprotector => ../secretprotector
 
 require (
 	cel.dev/expr v0.25.2 // indirect
@@ -46,7 +47,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect

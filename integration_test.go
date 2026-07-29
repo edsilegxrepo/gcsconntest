@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"criticalsys/secretprotector/pkg/libsecsecrets"
+	"criticalsys.net/secretprotector/pkg/libsecsecrets"
 )
 
 // getIntegrationEnv retrieves live testing parameters from environment variables.
@@ -536,6 +536,3 @@ func TestIntegration_LiveConnection_SecretProtector_PlatformIdiomatic(t *testing
 	}
 	t.Logf("Live Platform Idiomatic SecretProtector Test Success: Bucket '%s'", res.BucketName)
 }
-
-
-

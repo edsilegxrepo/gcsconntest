@@ -20,7 +20,7 @@ import (
 // to enable unit testing and mocking without live network requests.
 type StorageClient interface {
 	BucketAttrs(ctx context.Context, bucketName string) (*storage.BucketAttrs, error)
-	ListObjects(ctx context.Context, bucketName string, prefix string, maxObjects int) ([]string, error)
+	ListObjects(ctx context.Context, bucketName, prefix string, maxObjects int) ([]string, error)
 }
 
 // defaultStorageClient wraps concrete *storage.Client to satisfy StorageClient.
@@ -42,7 +42,7 @@ func (c *defaultStorageClient) BucketAttrs(ctx context.Context, bucketName strin
 
 // ListObjects lists object names in the specified GCS bucket up to maxObjects.
 // DATA FLOW: Context + Bucket Name + Prefix + Limit -> GCS BucketHandle.Objects (ProjectionNoACL) -> Iteration -> []string Object Names.
-func (c *defaultStorageClient) ListObjects(ctx context.Context, bucketName string, prefix string, maxObjects int) ([]string, error) {
+func (c *defaultStorageClient) ListObjects(ctx context.Context, bucketName, prefix string, maxObjects int) ([]string, error) {
 	bucket := c.client.Bucket(bucketName)
 	query := &storage.Query{
 		Prefix:     prefix,
@@ -51,7 +51,13 @@ func (c *defaultStorageClient) ListObjects(ctx context.Context, bucketName strin
 	_ = query.SetAttrSelection([]string{"name"})
 
 	it := bucket.Objects(ctx, query)
-	objectNames := make([]string, 0, maxObjects)
+	capHint := maxObjects
+	if capHint > 1000 {
+		capHint = 1000
+	} else if capHint < 0 {
+		capHint = 0
+	}
+	objectNames := make([]string, 0, capHint)
 	count := 0
 
 	for {

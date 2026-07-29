@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [v1.0.0] - 2026-07-27
 
 ### Added
-* **SecretProtector Encrypted Credentials Integration**: Added optional support for `criticalsys/secretprotector` ([libsecsecrets](pkg/libsecsecrets)) to decrypt AES-256-GCM encrypted service account JSON keys at rest using master keys resolved via `-key`, `-key-env`, or `-key-file` flags, with immediate in-memory buffer zeroing (`libsecsecrets.ZeroBuffer`).
-* **Reusable Go Package**: Refactored core functionality into an importable root Go package (`criticalsys/gcsconntest`) for seamless integration into health checkers and backend microservices.
+* **SecretProtector Encrypted Credentials Integration**: Added optional support for `criticalsys.net/secretprotector` ([libsecsecrets](pkg/libsecsecrets)) to decrypt AES-256-GCM encrypted service account JSON keys at rest using master keys resolved via `-key`, `-key-env`, or `-key-file` flags, with immediate in-memory buffer zeroing (`libsecsecrets.ZeroBuffer`).
+* **Reusable Go Package**: Refactored core functionality into an importable root Go package (`criticalsys.net/gcsconntest`) for seamless integration into health checkers and backend microservices.
 * **GCP Application Default Credentials (ADC)**: Added `-adc` flag and `AllowADC` option to support credential-less execution in GKE Workload Identity, Cloud Run, GCE VMs, and Workload Identity Federation.
 * **Granular Diagnostic Exit Codes**: Introduced process exit codes (0 to 5) to improve orchestrator and probe diagnostics:
   * `0`: Operational success (`ExitSuccess`)

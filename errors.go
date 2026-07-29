@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 
+	"golang.org/x/oauth2"
 	"google.golang.org/api/googleapi"
 )
 
@@ -77,6 +78,12 @@ func ClassifyError(err error) int {
 		default:
 			return ExitApiError
 		}
+	}
+
+	// OAuth2 token exchange errors
+	var retrieveErr *oauth2.RetrieveError
+	if errors.As(err, &retrieveErr) {
+		return ExitAuthError
 	}
 
 	if errors.Is(err, ErrAuthFailed) {

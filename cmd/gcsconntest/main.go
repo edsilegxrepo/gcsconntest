@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -19,7 +20,7 @@ import (
 	"syscall"
 	"time"
 
-	"criticalsys/gcsconntest"
+	"criticalsys.net/gcsconntest"
 )
 
 // Compile-time version variable (can be overridden via -ldflags)
@@ -40,17 +41,17 @@ func main() {
 // DATA FLOW: Context + []string Args + Stdout/Stderr Writers + TestFunc -> Flag Parsing -> Config Struct -> TestFunc Execution -> Format Output (JSON/Human) or Classify Error -> Exit Code Integer.
 func runApp(ctx context.Context, args []string, stdout, stderr io.Writer, testFn TestFunc) int {
 	var (
-		credFile     string
-		bucketName   string
-		bucketPrefix string
-		projectID    string
-		maxObjects   int
-		timeout      time.Duration
-		allowADC     bool
-		jsonOutput   bool
-		showVersion  bool
-		masterKey    string
-		masterKeyEnv string
+		credFile      string
+		bucketName    string
+		bucketPrefix  string
+		projectID     string
+		maxObjects    int
+		timeout       time.Duration
+		allowADC      bool
+		jsonOutput    bool
+		showVersion   bool
+		masterKey     string
+		masterKeyEnv  string
 		masterKeyFile string
 	)
 
@@ -71,6 +72,9 @@ func runApp(ctx context.Context, args []string, stdout, stderr io.Writer, testFn
 	fs.StringVar(&masterKeyFile, "key-file", "", "File path containing SecretProtector master key")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return gcsconntest.ExitSuccess
+		}
 		return gcsconntest.ExitUsageError
 	}
 

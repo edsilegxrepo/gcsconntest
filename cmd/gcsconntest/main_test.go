@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"criticalsys/gcsconntest"
+	"criticalsys.net/gcsconntest"
 )
 
 func TestRunApp_Version(t *testing.T) {
@@ -24,6 +24,15 @@ func TestRunApp_Version(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "GCS Connection Tester - Version:") {
 		t.Errorf("expected version output in stdout, got: %s", stdout.String())
+	}
+}
+
+func TestRunApp_Help(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := runApp(context.Background(), []string{"-help"}, &stdout, &stderr, nil)
+
+	if code != gcsconntest.ExitSuccess {
+		t.Errorf("expected exit code %d for -help, got %d", gcsconntest.ExitSuccess, code)
 	}
 }
 
@@ -195,4 +204,3 @@ func TestRunApp_SecretProtectorFlags(t *testing.T) {
 		t.Errorf("unexpected MasterKeyFile: %s", capturedCfg.MasterKeyFile)
 	}
 }
-

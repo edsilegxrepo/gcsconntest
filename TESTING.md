@@ -1,6 +1,6 @@
 # Testing Guide & Documentation
 
-This document describes the test architecture, design principles, execution flow, coverage reports, and instructions for running unit tests and live integration tests for `criticalsys/gcsconntest`.
+This document describes the test architecture, design principles, execution flow, coverage reports, and instructions for running unit tests and live integration tests for `criticalsys.net/gcsconntest`.
 
 ---
 
@@ -73,7 +73,7 @@ flowchart TD
 
 ### Requirements
 * **Go Version**: Supported standard Go release toolchain
-* **Standard Dependencies**: `testing`, `context`, `bytes`, `errors`, `net`, `os/exec`, `criticalsys/secretprotector`
+* **Standard Dependencies**: `testing`, `context`, `bytes`, `errors`, `net`, `os/exec`, `criticalsys.net/secretprotector`
 
 ### Environment Setup for Live Integration Tests
 When executing live integration tests against Google Cloud Storage:
@@ -141,8 +141,8 @@ When executing live integration tests against Google Cloud Storage:
 
 | Package / Module | Statement Coverage | Goal | Status |
 |---|---|---|---|
-| `criticalsys/gcsconntest` (Library Engine) | **90.0%** | 80.0% | **PASSED** |
-| `criticalsys/gcsconntest/cmd/gcsconntest` (CLI Engine) | **87.0%** | 80.0% | **PASSED** |
+| `criticalsys.net/gcsconntest` (Library Engine) | **90.0%** | 80.0% | **PASSED** |
+| `criticalsys.net/gcsconntest/cmd/gcsconntest` (CLI Engine) | **87.0%** | 80.0% | **PASSED** |
 | **Total Project Coverage** | **89.2%** | 80.0% | **PASSED** |
 
 #### Critical Function Coverage

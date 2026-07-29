@@ -17,7 +17,7 @@ import (
 	"strings"
 
 	"cloud.google.com/go/storage"
-	"criticalsys/secretprotector/pkg/libsecsecrets"
+	"criticalsys.net/secretprotector/pkg/libsecsecrets"
 	"google.golang.org/api/option"
 )
 
@@ -53,8 +53,9 @@ func NewClient(ctx context.Context, cfg Config) (*storage.Client, error) {
 	} else if cfg.CredFile != "" {
 		rawBytes, err := os.ReadFile(cfg.CredFile)
 		if err != nil {
-			return nil, fmt.Errorf("%w: failed to read credentials file: %v", os.ErrNotExist, err)
+			return nil, fmt.Errorf("%w: failed to read credentials file: %v", ErrAuthFailed, err)
 		}
+		defer libsecsecrets.ZeroBuffer(rawBytes)
 		credBytes := rawBytes
 		if len(masterKey) > 0 {
 			decryptedStr, err := libsecsecrets.Decrypt(ctx, strings.TrimSpace(string(rawBytes)), masterKey)
