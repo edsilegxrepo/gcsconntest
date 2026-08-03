@@ -17,7 +17,7 @@ import (
 	"strings"
 
 	"cloud.google.com/go/storage"
-	"criticalsys.net/secretprotector/pkg/libsecsecrets"
+	"github.com/edsilegxrepo/secretprotector/pkg/libsecsecrets"
 	"google.golang.org/api/option"
 )
 

@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"criticalsys.net/secretprotector/pkg/libsecsecrets"
+	"github.com/edsilegxrepo/secretprotector/pkg/libsecsecrets"
 )
 
 // getIntegrationEnv retrieves live testing parameters from environment variables.

@@ -1,15 +1,13 @@
-module criticalsys.net/gcsconntest
+module github.com/edsilegxrepo/gcsconntest
 
 go 1.25.8
 
 require (
 	cloud.google.com/go/storage v1.64.0
-	criticalsys.net/secretprotector v0.0.0
+	github.com/edsilegxrepo/secretprotector v0.0.0
 	golang.org/x/oauth2 v0.36.0
 	google.golang.org/api v0.291.0
 )
-
-replace criticalsys.net/secretprotector => ../secretprotector
 
 require (
 	cel.dev/expr v0.25.2 // indirect

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"criticalsys.net/gcsconntest"
+	"github.com/edsilegxrepo/gcsconntest"
 )
 
 func TestRunApp_Version(t *testing.T) {

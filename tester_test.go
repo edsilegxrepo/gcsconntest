@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
-	"criticalsys.net/secretprotector/pkg/libsecsecrets"
+	"github.com/edsilegxrepo/secretprotector/pkg/libsecsecrets"
 )
 
 type mockStorageClient struct {

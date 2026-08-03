@@ -20,7 +20,7 @@ import (
 	"syscall"
 	"time"
 
-	"criticalsys.net/gcsconntest"
+	"github.com/edsilegxrepo/gcsconntest"
 )
 
 // Compile-time version variable (can be overridden via -ldflags)
